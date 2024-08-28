@@ -23,10 +23,93 @@ def get_timestep_embedding(timesteps, embedding_dim):
         emb = torch.nn.functional.pad(emb, (0, 1, 0, 0))
     return emb
 
+def spike_function(v_scaled):
+    z_ = (v_scaled > 0).float()
+
+    def grad_fn(grad_output):
+        dz_dv_scaled = torch.clamp(1 - torch.abs(v_scaled), min=0)
+        grad_input = grad_output * dz_dv_scaled
+        return grad_input, None
+
+    return z_, grad_fn
+
+
+class FSSwishFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, h, d, T, K):
+        ctx.save_for_backward(x, h, d, T)
+        ctx.K = K
+
+        out = torch.zeros_like(x)
+        v = x
+        for t in range(K):
+            v_scaled = v - T[t]
+            z = spike_function(v_scaled)[0]
+            # z = (v_scaled > 0).float()
+            out += z * d[t]
+            v = v - z * h[t]
+        return out
+
+    # @staticmethod
+    def backward(ctx, grad_output):
+        x, h, d, T = ctx.saved_tensors
+        K = ctx.K
+
+        grad_x = torch.zeros_like(x)
+        v = x
+        for t in range(K):
+            v_scaled = v - T[t]
+            dz_dv_scaled = torch.clamp(1 - torch.abs(v_scaled), min=0)
+            grad_input = grad_output * dz_dv_scaled
+            grad_x += grad_input * d[t].to(grad_output.device)
+            v = v - (v_scaled > 0).float() * h[t].to(grad_output.device)
+        return grad_x, None, None, None, None
+
+
+def fs_swish(x, h, d, T):
+    K = len(h)
+    return FSSwishFunction.apply(x, h, d, T, K)
+
+
+# original
+# class FSSwishLayer(nn.Module):
+#     def __init__(self):
+#         super(FSSwishLayer, self).__init__()
+#         self.swish_h = torch.tensor([0.6667, 0.5870, 1.4833, 3.0379, 2.4488, 2.9923, 2.5679, 1.8541, 0.9022, 0.9178, 0.5000, 0.2846, 0.1595, 0.0839, 0.0417, 1.1349], dtype=torch.float32)
+#         self.swish_d = torch.tensor([0.3649, 0.7144, -0.2097, 3.1201, 2.4468, 3.0275, 2.5682, 1.8909, 0.9216, 0.9120, 0.4913, 0.2730, 0.1540, 0.0853, 0.0470, 0.0264], dtype=torch.float32)
+#         self.swish_T = torch.tensor([0.0834, 2.0955, -3.5100, 2.1758, 2.4932, 1.3676, 1.7017, 0.8178, -0.1175, -0.6438, -1.2931, -1.4991, -1.6387, -1.6972, -1.7321, -1.7469], dtype=torch.float32)
+#
+#     def forward(self, x):
+#         out = fs_swish(x, self.swish_h, self.swish_d, self.swish_T)
+#         return out
+
+# k=24, 20,000 epoochs trained
+class FSSwishLayer(nn.Module):
+    def __init__(self):
+        super(FSSwishLayer, self).__init__()
+        self.swish_h = torch.tensor([ 0.4462,  0.9426,  0.5828,  0.2679,  0.1929,  1.1032,  0.0062,  1.7608,
+         1.6892,  1.0465,  2.2203, -0.0518,  0.9965,  1.2357,  0.7535,  1.3039], dtype=torch.float32)
+        self.swish_d = torch.tensor([ 0.1441,  1.0263,  0.5819,  0.2583,  0.0890,  0.8074,  0.1049,  1.2033,
+         1.8082,  0.4312,  2.2586, -0.2693,  0.8391,  0.0463,  0.2339,  0.1115], dtype=torch.float32)
+        self.swish_T = torch.tensor([-0.4326,  0.7987,  0.1965, -0.0293,  1.7898,  0.4043, -0.1738, -0.0356,
+         2.1835, -0.0467,  2.3067, -1.7284,  1.2810,  0.9420, -0.2450, -0.5279], dtype=torch.float32)
+
+    def forward(self, x):
+        out = fs_swish(x, self.swish_h, self.swish_d, self.swish_T)
+        return out
+
+
+def fs(x):
+    # replace swish with fs_swish
+    fs_swish_layer = FSSwishLayer()
+    return fs_swish_layer(x)
 
 def nonlinearity(x):
     # swish
     return x*torch.sigmoid(x)
+
+def relu(x):
+    return torch.relu(x)
 
 
 def Normalize(in_channels):
@@ -113,15 +196,39 @@ class ResnetBlock(nn.Module):
                                                     padding=0)
 
     def forward(self, x, temb):
+
+        # Print the shapes of x and h
+        #print(f"x shape: {x.shape}, temb shape: {temb.shape}")
+
         h = x
         h = self.norm1(h)
+
+        # Print input statistics before nonlinearity
+        print(f"Before nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+
+
         h = nonlinearity(h)
+        #h = fs(h)
+
+        # Print output statistics after nonlinearity
+        print(f"After nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+
         h = self.conv1(h)
 
         h = h + self.temb_proj(nonlinearity(temb))[:, :, None, None]
+        #h = h + self.temb_proj(fs(temb))[:, :, None, None]
 
         h = self.norm2(h)
+
+        # Print input statistics before second nonlinearity
+        print(f"Before second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+
         h = nonlinearity(h)
+        #h = fs(h)
+
+        # Print output statistics after second nonlinearity
+        print(f"After second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+
         h = self.dropout(h)
         h = self.conv2(h)
 
@@ -305,6 +412,7 @@ class Model(nn.Module):
         temb = get_timestep_embedding(t, self.ch)
         temb = self.temb.dense[0](temb)
         temb = nonlinearity(temb)
+        #temb = fs(temb)
         temb = self.temb.dense[1](temb)
 
         # downsampling
@@ -337,5 +445,6 @@ class Model(nn.Module):
         # end
         h = self.norm_out(h)
         h = nonlinearity(h)
+        #h = fs(h)
         h = self.conv_out(h)
         return h

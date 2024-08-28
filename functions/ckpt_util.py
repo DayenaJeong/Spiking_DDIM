@@ -1,6 +1,7 @@
 import os, hashlib
 import requests
 from tqdm import tqdm
+import gdown
 
 URL_MAP = {
     "cifar10": "https://heibox.uni-heidelberg.de/f/869980b53bf5416c8a28/?dl=1",
@@ -11,6 +12,7 @@ URL_MAP = {
     "ema_lsun_cat": "https://heibox.uni-heidelberg.de/f/0701aac3aa69457bbe34/?dl=1",
     "lsun_church": "https://heibox.uni-heidelberg.de/f/2711a6f712e34b06b9d8/?dl=1",
     "ema_lsun_church": "https://heibox.uni-heidelberg.de/f/44ccb50ef3c6436db52e/?dl=1",
+    "ema_celeba": "https://drive.google.com/uc?id=1R_H-fJYXSH79wfSKs9D-fuKQVan5L-GR",
 }
 CKPT_MAP = {
     "cifar10": "diffusion_cifar10_model/model-790000.ckpt",
@@ -21,6 +23,7 @@ CKPT_MAP = {
     "ema_lsun_cat": "ema_diffusion_lsun_cat_model/model-1761000.ckpt",
     "lsun_church": "diffusion_lsun_church_model/model-4432000.ckpt",
     "ema_lsun_church": "ema_diffusion_lsun_church_model/model-4432000.ckpt",
+    "ema_celeba": "ema_diffusion_celeba_model/ckpt.pth",
 }
 MD5_MAP = {
     "cifar10": "82ed3067fd1002f5cf4c339fb80c4669",
@@ -31,6 +34,7 @@ MD5_MAP = {
     "ema_lsun_cat": "646f23f4821f2459b8bafc57fd824558",
     "lsun_church": "eb619b8a5ab95ef80f94ce8a5488dae3",
     "ema_lsun_church": "fdc68a23938c2397caba4a260bc2445f",
+    "ema_celeba": "f195ebe6d9fc1acbe9b2bd2a04af03f9",
 }
 
 
@@ -57,7 +61,8 @@ def get_ckpt_path(name, root=None, check=False):
         name = name.replace('church_outdoor', 'church')
     assert name in URL_MAP
     # Modify the path when necessary
-    cachedir = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("/atlas/u/tsong/.cache"))
+    #cachedir = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("/atlas/u/tsong/.cache"))
+    cachedir = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
     root = (
         root
         if root is not None

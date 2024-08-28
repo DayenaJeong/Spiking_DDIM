@@ -154,7 +154,7 @@ class Diffusion(object):
                 tb_logger.add_scalar("loss", loss, global_step=step)
 
                 logging.info(
-                    f"step: {step}, loss: {loss.item()}, data time: {data_time / (i+1)}"
+                    f"epoch: {epoch}, step: {step}, loss: {loss.item()}, data time: {data_time / (i+1)}"
                 )
 
                 optimizer.zero_grad()
@@ -188,6 +188,7 @@ class Diffusion(object):
                     torch.save(states, os.path.join(self.args.log_path, "ckpt.pth"))
 
                 data_start = time.time()
+            print(step)
 
     def sample(self):
         model = Model(self.config)
@@ -208,6 +209,7 @@ class Diffusion(object):
             model = model.to(self.device)
             model = torch.nn.DataParallel(model)
             model.load_state_dict(states[0], strict=True)
+            print(model)
 
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
@@ -217,20 +219,41 @@ class Diffusion(object):
             else:
                 ema_helper = None
         else:
-            # This used the pretrained DDPM model, see https://github.com/pesser/pytorch_diffusion
-            if self.config.data.dataset == "CIFAR10":
-                name = "cifar10"
-            elif self.config.data.dataset == "LSUN":
-                name = f"lsun_{self.config.data.category}"
-            else:
-                raise ValueError
-            ckpt = get_ckpt_path(f"ema_{name}")
-            print("Loading checkpoint {}".format(ckpt))
-            model.load_state_dict(torch.load(ckpt, map_location=self.device))
-            model.to(self.device)
-            model = torch.nn.DataParallel(model)
+                # This used the pretrained DDPM model, see https://github.com/pesser/pytorch_diffusion
+                if self.config.data.dataset == "CIFAR10":
+                    name = "cifar10"
+                elif self.config.data.dataset == "LSUN":
+                    name = f"lsun_{self.config.data.category}"
+                elif self.config.data.dataset == "CELEBA":
+                    name = "celeba"
+                    ckpt = "/home/parkjoe/.cache/diffusion_models_converted/ema_diffusion_celeba_model/ckpt.pth"
+                    checkpoint = torch.load(ckpt, map_location=self.device)
+
+                    if isinstance(checkpoint, list):
+                        state_dict = checkpoint[0]
+                    else:
+                        state_dict = checkpoint
+
+                    model.load_state_dict(state_dict, strict=False)
+                    model.to(self.device)
+                    model = torch.nn.DataParallel(model)
+                else:
+                    raise ValueError("Unsupported dataset")
 
         model.eval()
+
+        model_size = sum(p.numel() for p in model.parameters())
+        print(f"Total number of parameters: {model_size}")
+
+        param_size = 0
+        for param in model.parameters():
+            param_size += param.numel() * param.element_size()
+        buffer_size = 0
+        for buffer in model.buffers():
+            buffer_size += buffer.numel() * buffer.element_size()
+
+        size = (param_size + buffer_size) / 1024 ** 2
+        print(f"Model size: {size:.3f} MB")
 
         if self.args.fid:
             self.sample_fid(model)
