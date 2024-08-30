@@ -204,14 +204,14 @@ class ResnetBlock(nn.Module):
         h = self.norm1(h)
 
         # Print input statistics before nonlinearity
-        print(f"Before nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+        #print(f"Before nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
 
 
         h = nonlinearity(h)
         #h = fs(h)
 
         # Print output statistics after nonlinearity
-        print(f"After nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+        #print(f"After nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
 
         h = self.conv1(h)
 
@@ -221,13 +221,13 @@ class ResnetBlock(nn.Module):
         h = self.norm2(h)
 
         # Print input statistics before second nonlinearity
-        print(f"Before second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+        #print(f"Before second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
 
         h = nonlinearity(h)
         #h = fs(h)
 
         # Print output statistics after second nonlinearity
-        print(f"After second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
+        #print(f"After second nonlinearity: min={h.min().item()}, max={h.max().item()}, mean={h.mean().item()}, std={h.std().item()}")
 
         h = self.dropout(h)
         h = self.conv2(h)
@@ -297,9 +297,10 @@ class AttnBlock(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, device):
         super().__init__()
         self.config = config
+        self.device = device
         ch, out_ch, ch_mult = config.model.ch, config.model.out_ch, tuple(config.model.ch_mult)
         num_res_blocks = config.model.num_res_blocks
         attn_resolutions = config.model.attn_resolutions
@@ -326,14 +327,14 @@ class Model(nn.Module):
                             self.temb_ch),
             torch.nn.Linear(self.temb_ch,
                             self.temb_ch),
-        ])
+        ]).to(self.device)
 
         # downsampling
         self.conv_in = torch.nn.Conv2d(in_channels,
                                        self.ch,
                                        kernel_size=3,
                                        stride=1,
-                                       padding=1)
+                                       padding=1).to(self.device)
 
         curr_res = resolution
         in_ch_mult = (1,)+ch_mult
@@ -348,15 +349,15 @@ class Model(nn.Module):
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
-                                         dropout=dropout))
+                                         dropout=dropout).to(self.device))
                 block_in = block_out
                 if curr_res in attn_resolutions:
-                    attn.append(AttnBlock(block_in))
+                    attn.append(AttnBlock(block_in).to(self.device))
             down = nn.Module()
             down.block = block
             down.attn = attn
             if i_level != self.num_resolutions-1:
-                down.downsample = Downsample(block_in, resamp_with_conv)
+                down.downsample = Downsample(block_in, resamp_with_conv).to(self.device)
                 curr_res = curr_res // 2
             self.down.append(down)
 
@@ -365,12 +366,12 @@ class Model(nn.Module):
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
-                                       dropout=dropout)
-        self.mid.attn_1 = AttnBlock(block_in)
+                                       dropout=dropout).to(self.device)
+        self.mid.attn_1 = AttnBlock(block_in).to(self.device)
         self.mid.block_2 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
-                                       dropout=dropout)
+                                       dropout=dropout).to(self.device)
 
         # upsampling
         self.up = nn.ModuleList()
@@ -385,31 +386,31 @@ class Model(nn.Module):
                 block.append(ResnetBlock(in_channels=block_in+skip_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
-                                         dropout=dropout))
+                                         dropout=dropout).to(self.device))
                 block_in = block_out
                 if curr_res in attn_resolutions:
-                    attn.append(AttnBlock(block_in))
+                    attn.append(AttnBlock(block_in).to(self.device))
             up = nn.Module()
             up.block = block
             up.attn = attn
             if i_level != 0:
-                up.upsample = Upsample(block_in, resamp_with_conv)
+                up.upsample = Upsample(block_in, resamp_with_conv).to(self.device)
                 curr_res = curr_res * 2
             self.up.insert(0, up)  # prepend to get consistent order
 
         # end
-        self.norm_out = Normalize(block_in)
+        self.norm_out = Normalize(block_in).to(self.device)
         self.conv_out = torch.nn.Conv2d(block_in,
                                         out_ch,
                                         kernel_size=3,
                                         stride=1,
-                                        padding=1)
+                                        padding=1).to(self.device)
 
     def forward(self, x, t):
         assert x.shape[2] == x.shape[3] == self.resolution
 
         # timestep embedding
-        temb = get_timestep_embedding(t, self.ch)
+        temb = get_timestep_embedding(t, self.ch).to(self.device)
         temb = self.temb.dense[0](temb)
         temb = nonlinearity(temb)
         #temb = fs(temb)

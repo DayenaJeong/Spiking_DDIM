@@ -191,7 +191,7 @@ class Diffusion(object):
             print(step)
 
     def sample(self):
-        model = Model(self.config)
+        model = Model(self.config, self.device)
 
         if not self.args.use_pretrained:
             if getattr(self.config.sampling, "ckpt_id", None) is None:
@@ -226,17 +226,17 @@ class Diffusion(object):
                     name = f"lsun_{self.config.data.category}"
                 elif self.config.data.dataset == "CELEBA":
                     name = "celeba"
-                    ckpt = "/home/parkjoe/.cache/diffusion_models_converted/ema_diffusion_celeba_model/ckpt.pth"
-                    checkpoint = torch.load(ckpt, map_location=self.device)
+                    #ckpt = "/home/parkjoe/.cache/diffusion_models_converted/ema_diffusion_celeba_model/ckpt.pth"
+                    #checkpoint = torch.load(ckpt, map_location=self.device)
 
-                    if isinstance(checkpoint, list):
-                        state_dict = checkpoint[0]
-                    else:
-                        state_dict = checkpoint
-
-                    model.load_state_dict(state_dict, strict=False)
-                    model.to(self.device)
-                    model = torch.nn.DataParallel(model)
+                    # if isinstance(checkpoint, list):
+                    #     state_dict = checkpoint[0]
+                    # else:
+                    #     state_dict = checkpoint
+                    #
+                    # model.load_state_dict(state_dict, strict=False)
+                    # model.to(self.device)
+                    # model = torch.nn.DataParallel(model)
                 else:
                     raise ValueError("Unsupported dataset")
 
