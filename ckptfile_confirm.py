@@ -2,18 +2,20 @@ import os
 import hashlib
 import torch
 import torch.nn as nn
-import sys
-sys.path.append('/home/dayena7/PycharmProjects/Spiking_DDIM')
-from models.diffusion import Model  # Assuming you have a Model class defined in models.diffusion
-from models.ema import EMAHelper   # Assuming you have an EMAHelper class defined
 import argparse
-import yaml
+import sys
+
+sys.path.append('/')
+from models.diffusion import Model  # Assuming you have a Model class defined in models.diffusion
+from models.ema import EMAHelper  # Assuming you have an EMAHelper class defined
+
 
 def md5_hash(path):
     """Calculate MD5 hash of a file to check its integrity."""
     with open(path, "rb") as f:
         content = f.read()
     return hashlib.md5(content).hexdigest()
+
 
 def check_ckpt_exists(ckpt_path):
     """Check if the checkpoint file exists at the specified path."""
@@ -22,21 +24,26 @@ def check_ckpt_exists(ckpt_path):
     else:
         raise FileNotFoundError(f"Checkpoint file not found: {ckpt_path}")
 
+
 def print_checkpoint_structure(checkpoint):
     """Print the keys in the loaded checkpoint to verify its structure."""
     print("Checkpoint contains the following keys:")
     for key in checkpoint.keys():
         print(key)
 
+
 def sample(args, config):
     """Sample function to load model and verify checkpoint."""
+    print("Starting sample function...")  # È®ÀÎ¿ë ¸Þ½ÃÁö
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Pass the device argument when creating the model
     model = Model(config['model'], device=device)
 
     if not args.use_pretrained:
         # Use custom trained model's checkpoint
         ckpt_path = os.path.join(args.log_path, "ckpt.pth")
-        if getattr(config['sampling'], "ckpt_id", None) is not None:
+        if config.get('sampling', {}).get('ckpt_id') is not None:
             ckpt_path = os.path.join(args.log_path, f"ckpt_{config['sampling']['ckpt_id']}.pth")
 
         # Check if checkpoint exists
@@ -124,17 +131,35 @@ def sample(args, config):
     size = (param_size + buffer_size) / 1024 ** 2
     print(f"Model size: {size:.3f} MB")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Checkpoint File Confirmation")
-    parser.add_argument("--config", type=str, required=True, help="Path to the config file")
-    parser.add_argument("--log_path", type=str, required=True, help="Log path for checkpoints")
-    parser.add_argument("--use_pretrained", type=bool, default=False, help="Use pretrained model or not")
 
+if __name__ == "__main__":
+    # Argument parsing
+    parser = argparse.ArgumentParser(description="Checkpoint verification")
+    parser.add_argument("--config", required=True, help="Path to config file (YAML)")
+    parser.add_argument("--log_path", required=True, help="Log path where checkpoints are stored")
+    parser.add_argument("--use_pretrained", type=bool, default=False, help="Whether to use pretrained model")
     args = parser.parse_args()
 
-    # Load the config file
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    # Load your config (as a placeholder, you will need to load the actual YAML config)
+    config = {
+        "model": {
+            "ch": 128,
+            "out_ch": 3,
+            "ch_mult": [1, 2, 2, 2],
+            "num_res_blocks": 2,
+            "attn_resolutions": [16],
+            "dropout": 0.1,
+            "ema": True,
+            "ema_rate": 0.9999,
+            "type": "simple"
+        },
+        "data": {
+            "dataset": "CIFAR10",
+            "image_size": 32,
+            "channels": 3
+        },
+        "sampling": {}
+    }
 
-    print("Starting sample function...")
+    # Call the sample function
     sample(args, config)
